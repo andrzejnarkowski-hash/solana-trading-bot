@@ -17,7 +17,7 @@ A token passing these checks is not necessarily safe. Mint authority checks, tok
 - Collects self-reported social metadata as review context only; links do not establish legitimacy.
 - Simulates entries/exits in SQLite with configurable fee and adverse-slippage assumptions, cooldowns, position limits, stop-loss, take-profit and a realized daily-loss guard.
 - Provides a Streamlit dashboard with paper performance and a snapshot-based backtest.
-- Offers an optional, private-chat Telegram control panel for paper balance, open positions, recent trades, and bot events. Access is restricted to explicitly allowlisted Telegram user IDs.
+- Offers a private Telegram command center with a button menu, pause/resume for new paper entries, top saved signals, performance, risk settings, positions, trades and events. Access is restricted to explicitly allowlisted Telegram user IDs.
 
 ## Run in GitHub Codespaces
 
@@ -65,9 +65,9 @@ All settings are read from your local `.env` file. Optional X monitoring require
 2. Copy the bot token into your private local `.env` as `TELEGRAM_BOT_TOKEN=...`. Do not paste it into chat, source code, or a GitHub commit.
 3. Start the application once and open your new bot in Telegram. Send `/start`; it replies with your numeric Telegram user ID.
 4. Stop the application, add that ID to `TELEGRAM_ALLOWED_USER_IDS=123456789` in the private `.env`, then restart.
-5. Use `/help`, `/status`, `/positions`, `/trades`, and `/events` in a private chat.
+5. Use the Telegram menu or `/help`, `/status`, `/pause`, `/resume`, `/top`, `/positions`, `/performance`, `/risk`, `/trades`, and `/events` in a private chat.
 
-Telegram commands are read-only in this first version. They cannot buy, sell, or enable live trading. If the token is blank, the scanner continues normally with Telegram disabled.
+`/pause` disables new paper entries only; scanning and management of existing positions continue. `/resume` allows new simulated entries under configured risk limits. Telegram cannot enable live trading or send blockchain transactions. Risk settings are display-only.
 
 Important paper-execution assumptions:
 
