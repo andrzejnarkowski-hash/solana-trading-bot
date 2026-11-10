@@ -118,7 +118,7 @@ async def run():
                         min_txns_1h=settings.min_txns_1h,
                     )
                     broker.record_snapshot(token, score["score"], score["decision"])
-                    if score["decision"] != "WATCH" or not eligible_age(token):
+                    if score["decision"] != "WATCH" or not is_fresh:
                         continue
                     # Pausing blocks new entries only; scanning and exit management continue.
                     if not trading_enabled.is_set():
