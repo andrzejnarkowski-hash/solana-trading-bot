@@ -58,7 +58,8 @@ async def run():
     )
     x_disabled_logged = False
     trading_enabled = asyncio.Event()
-    trading_enabled.set()
+    if broker.entries_enabled():
+        trading_enabled.set()
     telegram = TelegramControl(
         token=settings.telegram_bot_token,
         allowed_user_ids=settings.telegram_allowed_user_ids,
