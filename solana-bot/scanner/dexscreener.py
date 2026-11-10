@@ -73,6 +73,28 @@ class DexScreener:
             "dex": pair.get("dexId"), "url": pair.get("url"),
         }
 
+    async def fetch_token_prices(self, addresses):
+        """Refresh held-token prices independently of the new-token discovery feed."""
+        unique = list(dict.fromkeys(a for a in addresses if a))
+        prices = {}
+        for i in range(0, len(unique), 30):
+            batch = unique[i:i + 30]
+            try:
+                pairs = await self.get("/tokens/v1/solana/" + ",".join(batch))
+                for pair in pairs or []:
+                    base = pair.get("baseToken") or {}
+                    address = base.get("address")
+                    price = _number(pair.get("priceUsd"))
+                    liquidity = _number((pair.get("liquidity") or {}).get("usd"))
+                    current = prices.get(address)
+                    if address in batch and price > 0 and (
+                        current is None or liquidity > current[1]
+                    ):
+                        prices[address] = (price, liquidity)
+            except (aiohttp.ClientError, asyncio.TimeoutError, ValueError) as error:
+                print(f"Held-token price refresh error: {error}")
+        return {address: item[0] for address, item in prices.items()}
+
     async def scan(self):
         pairs = await self.discover_tokens()
         best_by_token = {}
