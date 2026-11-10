@@ -57,10 +57,13 @@ async def run():
         poll_interval_seconds=settings.x_poll_interval_seconds,
     )
     x_disabled_logged = False
+    trading_enabled = asyncio.Event()
+    trading_enabled.set()
     telegram = TelegramControl(
         token=settings.telegram_bot_token,
         allowed_user_ids=settings.telegram_allowed_user_ids,
         broker=broker,
+        trading_enabled=trading_enabled,
     )
     await scanner.start()
     broker.log(
@@ -115,6 +118,9 @@ async def run():
                     )
                     broker.record_snapshot(token, score["score"], score["decision"])
                     if score["decision"] != "WATCH" or not eligible_age(token):
+                        continue
+                    # Pausing blocks new entries only; scanning and exit management continue.
+                    if not trading_enabled.is_set():
                         continue
                     checked += 1
                     if checked > 8:
