@@ -1,175 +1,96 @@
+"""Collect token social metadata without treating self-reported links as proof."""
 import aiohttp
 from urllib.parse import urlparse
 
 DEX_URL = "https://api.dexscreener.com/latest/dex/tokens/{}"
-
 SOCIAL_DOMAINS = {
-    "x.com", "twitter.com",
-    "t.me", "telegram.me",
-    "discord.gg", "discord.com",
-    "instagram.com", "tiktok.com",
-    "youtube.com", "youtu.be"
+    "x.com", "twitter.com", "t.me", "telegram.me", "discord.gg",
+    "discord.com", "instagram.com", "tiktok.com", "youtube.com", "youtu.be",
 }
 
 
-class SocialIntelligence:
+def _normalise_url(value, platform=None):
+    value = (value or "").strip()
+    if not value:
+        return None
+    if value.startswith("@"):
+        if platform in ("x", "twitter"):
+            return "https://x.com/" + value[1:]
+        if platform == "telegram":
+            return "https://t.me/" + value[1:]
+        return None
+    if "://" not in value:
+        if platform in ("x", "twitter") and "/" not in value and "." not in value:
+            return "https://x.com/" + value.lstrip("@")
+        if platform == "telegram" and "/" not in value and "." not in value:
+            return "https://t.me/" + value.lstrip("@")
+        value = "https://" + value
+    parsed = urlparse(value)
+    if parsed.scheme not in ("http", "https") or not parsed.hostname:
+        return None
+    return value
 
+
+class SocialIntelligence:
     async def analyze(self, token):
         address = token.get("address")
-
         if not address:
-            return {
-                "status": "UNKNOWN",
-                "score": None,
-                "warnings": ["Missing token address"]
-            }
-
+            return {"status": "UNKNOWN", "score": None,
+                    "warnings": ["Missing token address"]}
         try:
             timeout = aiohttp.ClientTimeout(total=15)
-
             async with aiohttp.ClientSession(timeout=timeout) as session:
                 async with session.get(DEX_URL.format(address)) as response:
                     response.raise_for_status()
                     data = await response.json()
-
             pairs = data.get("pairs") or []
-
             if not pairs:
-                return {
-                    "status": "UNKNOWN",
-                    "score": None,
-                    "warnings": ["No pair metadata"]
-                }
-
-            pair = max(
-                pairs,
-                key=lambda p: (p.get("liquidity") or {}).get("usd") or 0
-            )
-
+                return {"status": "UNKNOWN", "score": None,
+                        "warnings": ["No pair metadata"]}
+            pair = max(pairs, key=lambda p: (p.get("liquidity") or {}).get("usd") or 0)
             info = pair.get("info") or {}
-            socials = info.get("socials") or []
-            websites = info.get("websites") or []
-
-            x_profiles = []
-            x_posts = []
-            telegram = []
-            other_socials = []
-            project_links = []
-            warnings = []
-
-            def get_host(url):
-                try:
-                    if not url.startswith(("http://", "https://")):
-                        url = "https://" + url
-                    return (urlparse(url).hostname or "").lower()
-                except Exception:
-                    return ""
-
-            def is_domain(host, domain):
-                return host == domain or host.endswith("." + domain)
-
-            all_links = []
-
-            for item in socials:
+            profiles, posts, telegram, other, websites, warnings = [], [], [], [], [], []
+            for item in info.get("socials") or []:
                 platform = (item.get("type") or "").lower()
-                handle = (item.get("handle") or "").strip()
-
-                if not handle:
+                raw = item.get("url") or item.get("handle") or ""
+                url = _normalise_url(raw, platform)
+                if not url:
+                    warnings.append("Unusable social metadata entry")
                     continue
-
-                if platform in ("twitter", "x"):
-                    all_links.append(handle)
-                elif platform == "telegram":
-                    telegram.append(handle)
+                host = (urlparse(url).hostname or "").lower()
+                path = urlparse(url).path.strip("/")
+                if host in ("x.com", "www.x.com", "twitter.com", "www.twitter.com"):
+                    (posts if "/status/" in path else profiles).append(url)
+                elif host in ("t.me", "www.t.me", "telegram.me"):
+                    telegram.append(url)
                 else:
-                    other_socials.append(platform)
-
-            for item in websites:
-                url = (item.get("url") or "").strip()
-
+                    other.append(url)
+            for item in info.get("websites") or []:
+                url = _normalise_url(item.get("url"))
                 if url:
-                    all_links.append(url)
-
-            for link in all_links:
-                host = get_host(link)
-
-                if not host:
-                    warnings.append("Invalid social link")
-                    continue
-
-                if is_domain(host, "x.com") or is_domain(host, "twitter.com"):
-                    path = urlparse(
-                        link if link.startswith(("http://", "https://"))
-                        else "https://" + link
-                    ).path.strip("/")
-
-                    if path and "/status/" in path:
-                        x_posts.append(link)
-                    elif path and len(path.split("/")) == 1:
-                        x_profiles.append(link)
-                    else:
-                        warnings.append("X link is not a clear profile")
-
-                elif is_domain(host, "t.me") or is_domain(host, "telegram.me"):
-                    telegram.append(link)
-
-                elif any(is_domain(host, d) for d in SOCIAL_DOMAINS):
-                    other_socials.append(host)
-
-                else:
-                    project_links.append(link)
-
-            score = 0
-
-            if x_profiles:
-                score += 30
-
-            if project_links:
-                score += 20
-
-            if telegram:
-                score += 15
-
-            if other_socials:
-                score += min(15, len(set(other_socials)) * 5)
-
-            has_data = bool(
-                x_profiles or project_links or telegram or other_socials
-            )
-
-            if x_posts:
-                warnings.append(
-                    "X posts found, but no verified project profile"
-                )
-
-            if project_links:
-                warnings.append(
-                    "Website relevance to this token has not been verified"
-                )
-
-            if not has_data:
+                    websites.append(url)
+            if not profiles and not posts and not telegram and not other and not websites:
                 warnings.append("No usable social links found")
-
+            if websites:
+                warnings.append("Website links are self-reported and not verified against token ownership")
+            if profiles or posts or telegram or other:
+                warnings.append("Social links do not prove account ownership, activity, or community quality")
             return {
-                "status": "CHECKED" if has_data else "INSUFFICIENT_DATA",
-                "score": score if has_data else None,
-                "x_profiles": x_profiles,
-                "x_posts": x_posts,
-                "project_links": project_links,
-                "telegram": telegram,
-                "other_socials": other_socials,
+                "status": "CHECKED",
+                "score": None,
+                "x_profiles": sorted(set(profiles)),
+                "x_posts": sorted(set(posts)),
+                "telegram": sorted(set(telegram)),
+                "other_socials": sorted(set(other)),
+                "websites": sorted(set(websites)),
                 "warnings": warnings,
                 "limitations": [
-                    "Links are self-reported metadata",
-                    "X account ownership and activity are not verified",
-                    "Website relevance is not verified",
-                    "This score does not prove legitimacy"
-                ]
+                    "DexScreener metadata is self-reported",
+                    "X account identity and engagement are not verified",
+                    "Website/token ownership is not verified",
+                    "Social metadata is not used as a buy signal",
+                ],
             }
-
         except Exception as error:
-            return {
-                "status": "UNKNOWN",
-                "score": None,
-                "warnings": [str(error)]
-            }
+            return {"status": "UNKNOWN", "score": None,
+                    "warnings": [f"{type(error).__name__}: {error}"]}
