@@ -39,6 +39,10 @@ async def run():
             try:
                 tokens = await scanner.scan()
                 prices = {t["address"]: float(t.get("price_usd") or 0) for t in tokens}
+                open_positions = broker.summary()["positions"]
+                held_addresses = [position["address"] for position in open_positions]
+                held_prices = await scanner.fetch_token_prices(held_addresses)
+                prices.update(held_prices)
                 broker.update_positions(prices)
                 checked = 0
                 for token in tokens:
