@@ -12,7 +12,7 @@ RPC_URL = "https://api.mainnet-beta.solana.com"
 
 def base58_encode(data):
     alphabet = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
-    zeros = len(data) - len(data.lstrip(b"\\x00"))
+    zeros = len(data) - len(data.lstrip(bytes([0])))
     number = int.from_bytes(data, "big")
     encoded = ""
     while number:
