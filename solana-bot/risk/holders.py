@@ -1,22 +1,57 @@
-"""Partial holder concentration estimate from Solana RPC largest token accounts.
+"""Partial concentration analysis using the largest SPL token accounts.
 
-Important: this is token-account concentration, not a complete wallet-holder map.
-LP vaults, exchanges, custodians and program-owned accounts can dominate the result.
+The RPC endpoint exposes only the largest 20 token accounts. We decode their
+embedded token-owner addresses and aggregate duplicate accounts by owner wallet.
+This is still not a full holder map and does not classify LP/program vaults.
 """
+import base64
 import aiohttp
 
 RPC_URL = "https://api.mainnet-beta.solana.com"
+
+
+def base58_encode(data):
+    alphabet = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
+    zeros = len(data) - len(data.lstrip(b"\\x00"))
+    number = int.from_bytes(data, "big")
+    encoded = ""
+    while number:
+        number, remainder = divmod(number, 58)
+        encoded = alphabet[remainder] + encoded
+    return "1" * zeros + encoded
 
 
 def concentration_from_amounts(amounts, total_supply):
     total = int(total_supply or 0)
     if total <= 0:
         return None
-    values = [int(value or 0) for value in amounts]
+    values = sorted((max(0, int(value or 0)) for value in amounts), reverse=True)
     return {
         "top10_token_account_share_pct": round(sum(values[:10]) / total * 100, 2),
         "top20_token_account_share_pct": round(sum(values[:20]) / total * 100, 2),
     }
+
+
+def aggregate_owner_amounts(account_payloads):
+    """Return aggregate raw token amounts keyed by token-account owner wallet."""
+    owners = {}
+    parsed = 0
+    for item in account_payloads or []:
+        if not isinstance(item, dict):
+            continue
+        try:
+            encoded = (item.get("data") or [None])[0]
+            raw = base64.b64decode(encoded, validate=True)
+            if len(raw) < 72:
+                continue
+            owner = base58_encode(raw[32:64])
+            amount = int.from_bytes(raw[64:72], "little")
+            if owner:
+                owners[owner] = owners.get(owner, 0) + amount
+                parsed += 1
+        except (TypeError, ValueError, IndexError):
+            continue
+    return owners, parsed
 
 
 class HolderConcentration:
@@ -37,21 +72,36 @@ class HolderConcentration:
                     self._rpc(session, "getTokenLargestAccounts", [mint, {"commitment": "confirmed"}]),
                     self._rpc(session, "getTokenSupply", [mint, {"commitment": "confirmed"}]),
                 )
-            accounts = (largest or {}).get("value") or []
+                largest_accounts = (largest or {}).get("value") or []
+                addresses = [item.get("address") for item in largest_accounts if item.get("address")]
+                account_result = await self._rpc(
+                    session, "getMultipleAccounts",
+                    [addresses, {"encoding": "base64", "commitment": "confirmed"}],
+                ) if addresses else {"value": []}
+
             supply_value = (supply or {}).get("value") or {}
             total = int(supply_value.get("amount") or 0)
             if total <= 0:
                 return {"status": "UNKNOWN", "reason": "Token supply unavailable"}
-            amounts = [int(item.get("amount") or 0) for item in accounts]
-            shares = concentration_from_amounts(amounts, total)
+            payloads = (account_result or {}).get("value") or []
+            owners, parsed = aggregate_owner_amounts(payloads)
+            if not parsed:
+                return {"status": "UNKNOWN", "reason": "Could not decode largest token accounts"}
+            shares = concentration_from_amounts(owners.values(), total)
             return {
                 "status": "PARTIAL",
-                "accounts_returned": len(amounts),
-                **shares,
-                "warning": "Largest token accounts are not necessarily individual holders; LP and exchange vaults may distort concentration.",
-                "limitations": ["Only the largest 20 token accounts are returned",
-                                "No owner-wallet aggregation or LP-vault classification",
-                                "This estimate must not be treated as a complete holder distribution"],
+                "token_accounts_returned": len(addresses),
+                "token_accounts_decoded": parsed,
+                "unique_owners_in_top_accounts": len(owners),
+                "top10_wallet_share_pct": shares["top10_token_account_share_pct"],
+                "top20_wallet_share_pct": shares["top20_token_account_share_pct"],
+                "warning": "Wallets are aggregated only among the largest 20 token accounts; LP, exchange and program vaults are not classified.",
+                "limitations": [
+                    "Only the largest 20 token accounts are examined",
+                    "Wallets with several top accounts are aggregated, but smaller accounts outside the top 20 are missed",
+                    "LP, exchange, vesting, custody and program vaults are not classified",
+                    "This is not a complete holder distribution or a rug-pull verdict",
+                ],
             }
         except Exception as error:
             return {"status": "UNKNOWN", "reason": f"{type(error).__name__}: {error}"}
