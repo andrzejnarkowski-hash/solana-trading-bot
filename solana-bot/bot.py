@@ -91,9 +91,9 @@ async def run():
                     holder_result = await holders.analyze(token["address"])
                     if holder_result.get("status") == "PARTIAL":
                         broker.log(
-                            f"HOLDER ESTIMATE {token.get('symbol')}: top20 token accounts "
-                            f"{holder_result['top20_token_account_share_pct']}% of supply; "
-                            "LP/exchange accounts are not classified",
+                            f"HOLDER ESTIMATE {token.get('symbol')}: top20 wallet owners "
+                            f"{holder_result['top20_wallet_share_pct']}% of supply; "
+                            "LP/exchange/program vaults are not classified",
                             "WARNING",
                         )
                     else:
