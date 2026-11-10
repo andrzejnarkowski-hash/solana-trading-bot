@@ -22,7 +22,8 @@ class TelegramControl:
              ["📊 Status", "🔎 Top signals"],
              ["💼 Positions", "📈 Performance"],
              ["🧾 Trades", "🛡 Risk settings"],
-             ["📡 Events", "❔ Help"]],
+             ["🧠 Learning", "📡 Events"],
+             ["❔ Help"]],
             resize_keyboard=True,
         )
 
@@ -46,7 +47,7 @@ class TelegramControl:
             "trades": self.trades_command, "events": self.events_command,
             "pause": self.pause_command, "resume": self.resume_command,
             "top": self.top_command, "performance": self.performance_command,
-            "risk": self.risk_command,
+            "risk": self.risk_command, "learning": self.learning_command,
         }
         for command, callback in handlers.items():
             self.application.add_handler(CommandHandler(command, callback))
@@ -107,6 +108,7 @@ class TelegramControl:
             "📈 Performance": self.performance_command,
             "🧾 Trades": self.trades_command,
             "🛡 Risk settings": self.risk_command,
+            "🧠 Learning": self.learning_command,
             "📡 Events": self.events_command,
             "❔ Help": self.help_command,
         }
@@ -121,7 +123,9 @@ class TelegramControl:
                 "/run — start allowing new paper buys\n"
                 "/stop — stop new buys; open positions are still monitored\n"
                 "/setsize 20 — set each new paper position to $20 (range $1–$1,000)\n"
+                "/setsize 20 — set each new paper position to $20\n"
                 "/status — equity, cash and P&L\n/top — best saved scanner signals\n"
+                "/learning — closed-trade results grouped by entry score\n"
                 "/positions — open positions\n/performance — closed-trade statistics\n"
                 "/trades — recent trades\n/risk — configured limits\n/events — recent logs\n"
                 "No command can send real transactions.",
@@ -267,6 +271,26 @@ class TelegramControl:
             "Change the entry size anytime with /setsize 20. Existing positions are unchanged.",
             reply_markup=self.menu,
         )
+
+    async def learning_command(self, update, context):
+        if not await self._authorized(update):
+            return
+        report = self.broker.learning_report()
+        lines = [
+            "🧠 PAPER STRATEGY LEARNING",
+            f"Closed trades in sample: {report['closed_trades']}",
+            "Results are grouped by the score at entry. This is measurement, not automatic strategy changes.",
+        ]
+        if not report["bands"]:
+            lines.append("Not enough closed trades yet. Keep collecting paper results.")
+        else:
+            for band in report["bands"]:
+                lines.append(
+                    f"Score {band['band']}: {band['trades']} trades | "
+                    f"win rate {band['win_rate_pct']:.1f}% | "
+                    f"average net P&L ${band['average_pnl_usd']:.2f}"
+                )
+        await update.effective_message.reply_text("\n".join(lines)[:4000], reply_markup=self.menu)
 
     async def events_command(self, update, context):
         if not await self._authorized(update):
