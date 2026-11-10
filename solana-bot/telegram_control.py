@@ -1,57 +1,60 @@
-"""Telegram read-only control panel for the paper-trading bot.
+"""Private Telegram command center for the Solana paper trader.
 
-Only explicitly allowlisted Telegram user IDs can inspect bot data. /start is
-available to show a user's numeric ID during setup. No live trading commands.
+Remote controls can pause/resume NEW PAPER ENTRIES only. Scanning and simulated
+position exit management continue while paused. No live transaction execution.
 """
-import logging
-
-from telegram import Update
-from telegram.ext import Application, CommandHandler, ContextTypes
-
-logger = logging.getLogger(__name__)
+from telegram import ReplyKeyboardMarkup, Update
+from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters
 
 
 class TelegramControl:
-    def __init__(self, token, allowed_user_ids, broker):
+    def __init__(self, token, allowed_user_ids, broker, trading_enabled=None):
         self.token = (token or "").strip()
         self.allowed_user_ids = {
             int(value.strip()) for value in (allowed_user_ids or "").split(",")
             if value.strip().isdigit()
         }
         self.broker = broker
+        self.trading_enabled = trading_enabled
         self.application = None
+        self.menu = ReplyKeyboardMarkup(
+            [["▶️ Resume entries", "⏸ Pause entries"],
+             ["📊 Status", "🔎 Top signals"],
+             ["💼 Positions", "📈 Performance"],
+             ["🧾 Trades", "🛡 Risk settings"],
+             ["📡 Events", "❔ Help"]],
+            resize_keyboard=True,
+        )
 
     @property
     def enabled(self):
         return bool(self.token)
 
+    def _entries_enabled(self):
+        return self.trading_enabled is None or self.trading_enabled.is_set()
+
     async def start(self):
         if not self.enabled:
-            self.broker.log(
-                "Telegram disabled: configure TELEGRAM_BOT_TOKEN locally to enable it.",
-                "WARNING",
-            )
+            self.broker.log("Telegram disabled: TELEGRAM_BOT_TOKEN is missing.", "WARNING")
             return False
         self.application = Application.builder().token(self.token).build()
-        self.application.add_handler(CommandHandler("start", self.start_command))
-        self.application.add_handler(CommandHandler("help", self.help_command))
-        self.application.add_handler(CommandHandler("status", self.status_command))
-        self.application.add_handler(CommandHandler("positions", self.positions_command))
-        self.application.add_handler(CommandHandler("trades", self.trades_command))
-        self.application.add_handler(CommandHandler("events", self.events_command))
+        handlers = {
+            "start": self.start_command, "help": self.help_command,
+            "status": self.status_command, "positions": self.positions_command,
+            "trades": self.trades_command, "events": self.events_command,
+            "pause": self.pause_command, "resume": self.resume_command,
+            "top": self.top_command, "performance": self.performance_command,
+            "risk": self.risk_command,
+        }
+        for command, callback in handlers.items():
+            self.application.add_handler(CommandHandler(command, callback))
+        self.application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.menu_command))
         await self.application.initialize()
         await self.application.start()
         if self.application.updater is None:
             raise RuntimeError("Telegram polling updater is unavailable")
         await self.application.updater.start_polling(drop_pending_updates=True)
-        if self.allowed_user_ids:
-            self.broker.log("Telegram control panel started (allowlisted users only).")
-        else:
-            self.broker.log(
-                "Telegram started in onboarding mode: send /start to get your user ID, "
-                "then add it to TELEGRAM_ALLOWED_USER_IDS.",
-                "WARNING",
-            )
+        self.broker.log("Telegram command center started (allowlisted users only).")
         return True
 
     async def stop(self):
@@ -64,107 +67,189 @@ class TelegramControl:
         await self.application.shutdown()
         self.application = None
 
-    async def _authorized(self, update: Update):
-        user = update.effective_user
-        chat = update.effective_chat
+    async def _authorized(self, update):
+        user, chat = update.effective_user, update.effective_chat
         if not user or not chat:
             return False
         if chat.type != "private":
             await update.effective_message.reply_text("Use me in a private chat.")
             return False
         if user.id not in self.allowed_user_ids:
-            await update.effective_message.reply_text(
-                f"Not authorized. Your Telegram user ID is: {user.id}\n"
-                "Add this ID to TELEGRAM_ALLOWED_USER_IDS in your private .env, "
-                "then restart the bot."
-            )
+            await update.effective_message.reply_text(f"Not authorized. Your Telegram ID: {user.id}")
             return False
         return True
 
-    async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+    async def start_command(self, update, context):
         user = update.effective_user
         if not user:
             return
         if user.id not in self.allowed_user_ids:
             await update.effective_message.reply_text(
-                f"Your Telegram user ID: {user.id}\n"
-                "Add it to TELEGRAM_ALLOWED_USER_IDS in your private .env, then restart."
+                f"Your Telegram user ID: {user.id}\nAdd it to TELEGRAM_ALLOWED_USER_IDS and restart."
             )
             return
         await update.effective_message.reply_text(
-            "Paper-trading bot connected. Send /help to see available commands."
+            "🟢 SOLANA PAPER BOT CONNECTED\nChoose an action below. Live trading is not implemented.",
+            reply_markup=self.menu,
         )
 
-    async def help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+    async def menu_command(self, update, context):
         if not await self._authorized(update):
             return
-        await update.effective_message.reply_text(
-            "Available commands (paper mode only):\n"
-            "/status — balance and performance\n"
-            "/positions — current paper positions\n"
-            "/trades — latest paper trades\n"
-            "/events — latest bot log events\n"
-            "/help — this message\n\n"
-            "Telegram cannot execute live trades."
-        )
+        actions = {
+            "▶️ Resume entries": self.resume_command,
+            "⏸ Pause entries": self.pause_command,
+            "📊 Status": self.status_command,
+            "🔎 Top signals": self.top_command,
+            "💼 Positions": self.positions_command,
+            "📈 Performance": self.performance_command,
+            "🧾 Trades": self.trades_command,
+            "🛡 Risk settings": self.risk_command,
+            "📡 Events": self.events_command,
+            "❔ Help": self.help_command,
+        }
+        callback = actions.get((update.effective_message.text or "").strip())
+        if callback:
+            await callback(update, context)
 
-    async def status_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+    async def help_command(self, update, context):
+        if await self._authorized(update):
+            await update.effective_message.reply_text(
+                "COMMAND CENTER (PAPER MODE)\n"
+                "/resume — allow new simulated entries\n"
+                "/pause — pause new entries; existing positions remain managed\n"
+                "/status — equity, cash and P&L\n/top — best saved scanner signals\n"
+                "/positions — open positions\n/performance — closed-trade statistics\n"
+                "/trades — recent trades\n/risk — configured limits\n/events — recent logs\n"
+                "No command can send real transactions.",
+                reply_markup=self.menu,
+            )
+
+    async def pause_command(self, update, context):
         if not await self._authorized(update):
             return
-        summary = self.broker.summary()
-        performance = self.broker.performance()
+        if self.trading_enabled is not None:
+            self.trading_enabled.clear()
+        self.broker.log("Telegram control: paused new paper entries.")
         await update.effective_message.reply_text(
-            "PAPER BOT STATUS\n"
-            f"Equity: ${summary['equity']:.2f}\n"
-            f"Cash: ${summary['cash']:.2f}\n"
-            f"Realized P&L: ${summary['realized_pnl']:.2f}\n"
-            f"Unrealized P&L: ${summary['unrealized_pnl']:.2f}\n"
-            f"Open positions: {summary['open_positions']}\n"
-            f"Closed trades: {performance['closed_trades']}\n"
-            f"Win rate: {performance['win_rate_pct']:.2f}%"
+            "⏸ NEW PAPER ENTRIES PAUSED\nScanner and management of existing positions continue.",
+            reply_markup=self.menu,
         )
 
-    async def positions_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+    async def resume_command(self, update, context):
+        if not await self._authorized(update):
+            return
+        if self.trading_enabled is not None:
+            self.trading_enabled.set()
+        self.broker.log("Telegram control: resumed new paper entries.")
+        await update.effective_message.reply_text(
+            "▶️ PAPER ENTRIES RESUMED\nNew simulated entries are allowed under configured risk limits.",
+            reply_markup=self.menu,
+        )
+
+    async def status_command(self, update, context):
+        if not await self._authorized(update):
+            return
+        s, p = self.broker.summary(), self.broker.performance()
+        state = "RUNNING" if self._entries_enabled() else "PAUSED (position management ON)"
+        await update.effective_message.reply_text(
+            "📊 SOLANA PAPER BOT\n"
+            f"Entry engine: {state}\nEquity: ${s['equity']:.2f} "
+            f"(start ${s['starting_balance']:.2f})\nCash: ${s['cash']:.2f}\n"
+            f"Realized P&L: ${s['realized_pnl']:.2f}\nUnrealized P&L: ${s['unrealized_pnl']:.2f}\n"
+            f"Total P&L: ${s['total_pnl']:.2f}\nOpen positions: {s['open_positions']}\n"
+            f"Closed trades: {p['closed_trades']} | Win rate: {p['win_rate_pct']:.1f}%",
+            reply_markup=self.menu,
+        )
+
+    async def positions_command(self, update, context):
         if not await self._authorized(update):
             return
         positions = self.broker.summary()["positions"]
         if not positions:
-            await update.effective_message.reply_text("No open paper positions.")
+            await update.effective_message.reply_text("No open paper positions.", reply_markup=self.menu)
             return
-        lines = ["OPEN PAPER POSITIONS"]
-        for position in positions[:15]:
+        lines = ["💼 OPEN PAPER POSITIONS"]
+        for pos in positions[:12]:
             lines.append(
-                f"{position.get('symbol') or 'UNKNOWN'} | "
-                f"net P&L ${position['unrealized_pnl_usd']:.2f} "
-                f"({position['unrealized_pnl_pct']:.2f}%)\n"
-                f"CA: {position['address']}"
+                f"{pos.get('symbol') or 'UNKNOWN'} | P&L ${pos['unrealized_pnl_usd']:.2f} "
+                f"({pos['unrealized_pnl_pct']:.2f}%)\nEntry ${pos['entry_price']:.8g} | "
+                f"Mark ${pos['market_price_usd']:.8g}\n{pos['address']}"
             )
-        await update.effective_message.reply_text("\n\n".join(lines)[:4000])
+        await update.effective_message.reply_text("\n\n".join(lines)[:4000], reply_markup=self.menu)
 
-    async def trades_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+    async def trades_command(self, update, context):
         if not await self._authorized(update):
             return
-        trades = self.broker.recent_trades(10)
+        trades = self.broker.recent_trades(12)
         if not trades:
-            await update.effective_message.reply_text("No paper trades recorded yet.")
+            await update.effective_message.reply_text("No paper trades recorded yet.", reply_markup=self.menu)
             return
-        lines = ["LATEST PAPER TRADES"]
+        lines = ["🧾 RECENT PAPER TRADES"]
         for trade in trades:
-            pnl = trade.get("pnl_usd")
-            result = f"${pnl:.2f}" if pnl is not None else "OPEN"
-            lines.append(
-                f"{trade.get('symbol') or 'UNKNOWN'} | {trade['status']} | {result}"
-            )
-        await update.effective_message.reply_text("\n".join(lines))
+            pnl = "OPEN" if trade["pnl_usd"] is None else f"${trade['pnl_usd']:.2f}"
+            lines.append(f"{trade.get('symbol') or 'UNKNOWN'} | {trade['status']} | {pnl}")
+        await update.effective_message.reply_text("\n".join(lines)[:4000], reply_markup=self.menu)
 
-    async def events_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+    async def performance_command(self, update, context):
         if not await self._authorized(update):
             return
-        events = self.broker.recent_events(10)
-        if not events:
-            await update.effective_message.reply_text("No bot events recorded yet.")
+        p = self.broker.performance()
+        factor = p["profit_factor"] if p["profit_factor"] is not None else "N/A"
+        await update.effective_message.reply_text(
+            "📈 CLOSED-TRADE PERFORMANCE (PAPER)\n"
+            f"Trades: {p['closed_trades']} | Win rate: {p['win_rate_pct']:.2f}%\n"
+            f"Profit factor: {factor}\nAverage P&L: ${p['average_pnl_usd']:.2f}\n"
+            f"Best: ${p['best_trade_usd']:.2f} | Worst: ${p['worst_trade_usd']:.2f}\n"
+            "A small sample is not evidence of a profitable strategy.",
+            reply_markup=self.menu,
+        )
+
+    async def top_command(self, update, context):
+        if not await self._authorized(update):
             return
-        lines = ["LATEST BOT EVENTS"]
+        snapshots = self.broker.recent_snapshots(500)
+        latest = {}
+        for item in snapshots:
+            address = item.get("address")
+            if address and address not in latest and item.get("decision") in ("WATCH", "MONITOR"):
+                latest[address] = item
+        ranked = sorted(latest.values(), key=lambda x: float(x.get("score") or 0), reverse=True)[:10]
+        if not ranked:
+            await update.effective_message.reply_text("No qualifying saved signals yet.", reply_markup=self.menu)
+            return
+        lines = ["🔎 TOP SAVED SCANNER SIGNALS", "Heuristic scores are not buy recommendations."]
+        for item in ranked:
+            lines.append(
+                f"{item.get('symbol') or 'UNKNOWN'} | {item['decision']} | score {float(item.get('score') or 0):.1f}\n"
+                f"Liquidity ${float(item.get('liquidity_usd') or 0):,.0f} | "
+                f"1h volume ${float(item.get('volume_1h') or 0):,.0f}\n{item['address']}"
+            )
+        await update.effective_message.reply_text("\n\n".join(lines)[:4000], reply_markup=self.menu)
+
+    async def risk_command(self, update, context):
+        if not await self._authorized(update):
+            return
+        b = self.broker
+        await update.effective_message.reply_text(
+            "🛡 PAPER RISK SETTINGS (DISPLAY ONLY)\n"
+            f"Trade size: ${b.trade_size:.2f}\nMax positions: {b.max_positions}\n"
+            f"Stop loss: {b.stop_loss_pct:.1f}% | Take profit: {b.take_profit_pct:.1f}%\n"
+            f"Fee estimate: {b.fee_rate*100:.2f}% each side\n"
+            f"Slippage estimate: {b.slippage_rate*100:.2f}% each side\n"
+            f"Cooldown: {b.cooldown_seconds//60} min\nDaily loss guard: {b.max_daily_loss_pct:.1f}%\n"
+            "Edit private Codespaces environment settings to change these values.",
+            reply_markup=self.menu,
+        )
+
+    async def events_command(self, update, context):
+        if not await self._authorized(update):
+            return
+        events = self.broker.recent_events(12)
+        if not events:
+            await update.effective_message.reply_text("No events recorded yet.", reply_markup=self.menu)
+            return
+        lines = ["📡 LATEST BOT EVENTS"]
         for event in events:
             lines.append(f"[{event['level']}] {event['message'][:220]}")
-        await update.effective_message.reply_text("\n".join(lines)[:4000])
+        await update.effective_message.reply_text("\n".join(lines)[:4000], reply_markup=self.menu)
