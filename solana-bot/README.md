@@ -83,7 +83,7 @@ The backtest is deliberately transparent but limited: it cannot reconstruct miss
 
 ## Known limitations — do not mistake these for completed features
 
-- There is no live X/Twitter listener, no official X API integration, and no AI image/meme interpretation.
+- Optional official X API recent-search monitoring is implemented but remains disabled until you provide your own bearer token in local `.env`. It can log public CA mentions and basic engagement counts; it does not verify identity, analyse meme images, or trigger buys. API access, cost and rate limits depend on your X developer account.
 - Influencer accounts are not automatically trusted. The default watchlist is empty; any manual reputation value must be independently verified.
 - Holder analysis is a partial top-20 token-account estimate. It does not aggregate owners or classify LP, exchange, vesting, and program vaults.
 - LP lock/burn verification, creator-wallet history, insider-cluster analysis, honeypot transaction simulation, and robust sellability checks are not implemented.
