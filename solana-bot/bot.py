@@ -6,6 +6,8 @@ from dotenv import load_dotenv
 from scanner.dexscreener import DexScreener
 from intelligence.scoring import score_token
 from risk.onchain import OnChainSecurity
+from risk.holders import HolderConcentration
+from intelligence.social import SocialIntelligence
 from trading.paper import PaperBroker
 
 load_dotenv()
@@ -32,6 +34,8 @@ async def run():
     )
     scanner = DexScreener()
     security = OnChainSecurity()
+    holders = HolderConcentration()
+    social = SocialIntelligence()
     await scanner.start()
     broker.log("Bot started in PAPER mode. No real transactions can be sent.")
     try:
@@ -61,6 +65,19 @@ async def run():
                     if result.get("risks"):
                         broker.log(f"REJECT {token.get('symbol')}: " + "; ".join(result["risks"]), "WARNING")
                         continue
+                    holder_result = await holders.analyze(token["address"])
+                    if holder_result.get("status") == "PARTIAL":
+                        broker.log(
+                            f"HOLDER ESTIMATE {token.get('symbol')}: top20 token accounts "
+                            f"{holder_result['top20_token_account_share_pct']}% of supply; "
+                            "LP/exchange accounts are not classified",
+                            "WARNING",
+                        )
+                    else:
+                        broker.log(f"HOLDER DATA UNKNOWN {token.get('symbol')}: {holder_result.get('reason')}", "WARNING")
+                    social_result = await social.analyze(token)
+                    if social_result.get("warnings"):
+                        broker.log(f"SOCIAL REVIEW {token.get('symbol')}: " + "; ".join(social_result["warnings"]), "INFO")
                     broker.open_position(token, score["score"])
                 summary = broker.summary(prices)
                 print(f"Scanned {len(tokens)} pairs | paper equity ${summary['equity']:.2f} | "
