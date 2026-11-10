@@ -9,6 +9,10 @@ from risk.onchain import OnChainSecurity
 from risk.holders import HolderConcentration
 from intelligence.social import SocialIntelligence
 from trading.paper import PaperBroker
+from intelligence.x_monitor import XMonitor
+from intelligence.ca_detector import extract_addresses
+from intelligence.announcement import analyze_announcement
+from intelligence.influencers import calculate_signal_priority
 
 INTERVAL = settings.scan_interval_seconds
 MIN_AGE = settings.paper_max_token_age_minutes
@@ -46,6 +50,12 @@ async def run():
     security = OnChainSecurity()
     holders = HolderConcentration()
     social = SocialIntelligence()
+    x_monitor = XMonitor(
+        bearer_token=settings.x_bearer_token,
+        query=settings.x_search_query,
+        poll_interval_seconds=settings.x_poll_interval_seconds,
+    )
+    x_disabled_logged = False
     await scanner.start()
     broker.log(
         "Bot started in PAPER mode. Estimated fees/slippage are applied; no real transactions can be sent."
@@ -53,6 +63,29 @@ async def run():
     try:
         while True:
             try:
+                x_result = await x_monitor.poll()
+                if x_result["status"] == "DISABLED" and not x_disabled_logged:
+                    broker.log(
+                        "X monitoring disabled: configure X_BEARER_TOKEN locally to enable official X API search.",
+                        "WARNING",
+                    )
+                    x_disabled_logged = True
+                elif x_result["status"] == "ERROR":
+                    broker.log("X API poll failed: " + x_result.get("reason", "unknown error"), "WARNING")
+                elif x_result["status"] == "OK":
+                    for post in x_result["posts"]:
+                        addresses = extract_addresses(post["text"])
+                        if not addresses:
+                            continue
+                        announcement = analyze_announcement(post["text"], addresses)
+                        priority = calculate_signal_priority(post["username"], announcement)
+                        broker.log(
+                            f"X CA MENTION @{post['username']} | {announcement['signal']} | "
+                            f"priority {priority['priority']} | followers {post['followers_count']} | "
+                            f"likes {post['like_count']} | CAs {', '.join(addresses)} | "
+                            "not an endorsement or buy signal",
+                            "INFO",
+                        )
                 tokens = await scanner.scan()
                 prices = {t["address"]: float(t.get("price_usd") or 0) for t in tokens}
                 open_positions = broker.summary()["positions"]
