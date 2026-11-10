@@ -17,6 +17,7 @@ from telegram_control import TelegramControl
 
 INTERVAL = settings.scan_interval_seconds
 MIN_AGE = settings.paper_max_token_age_minutes
+PAPER_ENTRY_INTERVAL = settings.paper_entry_interval_seconds
 
 
 def eligible_age(token, now_ms=None):
@@ -57,6 +58,7 @@ async def run():
         poll_interval_seconds=settings.x_poll_interval_seconds,
     )
     x_disabled_logged = False
+    last_aggressive_entry = 0.0
     trading_enabled = asyncio.Event()
     if broker.entries_enabled():
         trading_enabled.set()
@@ -110,6 +112,13 @@ async def run():
                     print(f"Closed {symbol}: {reason}, net P&L ${pnl:.2f}")
 
                 checked = 0
+                now = time.time()
+                aggressive_window = (
+                    settings.paper_aggressive_mode
+                    and trading_enabled.is_set()
+                    and now - last_aggressive_entry >= PAPER_ENTRY_INTERVAL
+                )
+                fresh_candidates = []
                 for token in tokens:
                     is_fresh = eligible_age(token)
                     score = score_token(
@@ -120,49 +129,59 @@ async def run():
                         fresh=is_fresh,
                     )
                     broker.record_snapshot(token, score["score"], score["decision"])
-                    if score["decision"] != "WATCH" or not is_fresh:
-                        continue
-                    # Pausing blocks new entries only; scanning and exit management continue.
-                    if not trading_enabled.is_set():
-                        continue
-                    checked += 1
-                    if checked > 8:
-                        break
+                    if is_fresh:
+                        fresh_candidates.append((token, score))
 
-                    result = await security.check_mint(token["address"])
-                    if result.get("status") != "PARSED":
-                        broker.log(f"REVIEW {token.get('symbol')}: mint data not parsed", "WARNING")
-                        continue
-                    if result.get("risks"):
-                        broker.log(
-                            f"REJECT {token.get('symbol')}: " + "; ".join(result["risks"]),
-                            "WARNING",
-                        )
-                        continue
+                # Aggressive PAPER mode takes one fresh candidate roughly every 90 seconds.
+                # It still requires basic mint-risk checks and never sends a real trade.
+                if aggressive_window and fresh_candidates:
+                    fresh_candidates.sort(
+                        key=lambda item: (
+                            item[1]["score"],
+                            item[0].get("liquidity_usd", 0),
+                            item[0].get("volume_5m", 0),
+                        ),
+                        reverse=True,
+                    )
+                    for token, score in fresh_candidates:
+                        if checked >= 8:
+                            break
+                        checked += 1
+                        result = await security.check_mint(token["address"])
+                        if result.get("status") != "PARSED":
+                            broker.log(f"REVIEW {token.get('symbol')}: mint data not parsed", "WARNING")
+                            continue
+                        if result.get("risks"):
+                            broker.log(
+                                f"REJECT {token.get('symbol')}: " + "; ".join(result["risks"]),
+                                "WARNING",
+                            )
+                            continue
 
-                    holder_result = await holders.analyze(token["address"])
-                    if holder_result.get("status") == "PARTIAL":
-                        broker.log(
-                            f"HOLDER ESTIMATE {token.get('symbol')}: top20 wallet owners "
-                            f"{holder_result['top20_wallet_share_pct']}% of supply; "
-                            "LP/exchange/program vaults are not classified",
-                            "WARNING",
-                        )
-                    else:
-                        broker.log(
-                            f"HOLDER DATA UNKNOWN {token.get('symbol')}: {holder_result.get('reason')}",
-                            "WARNING",
-                        )
+                        holder_result = await holders.analyze(token["address"])
+                        if holder_result.get("status") == "PARTIAL":
+                            broker.log(
+                                f"HOLDER ESTIMATE {token.get('symbol')}: top20 wallet owners "
+                                f"{holder_result['top20_wallet_share_pct']}% of supply; "
+                                "LP/exchange/program vaults are not classified",
+                                "WARNING",
+                            )
 
-                    social_result = await social.analyze(token)
-                    if social_result.get("warnings"):
-                        broker.log(
-                            f"SOCIAL REVIEW {token.get('symbol')}: " +
-                            "; ".join(social_result["warnings"]), "INFO"
-                        )
-                    opened = broker.open_position(token, score["score"])
-                    if opened:
-                        print(f"Paper entry: {token.get('symbol')} score={score['score']}")
+                        social_result = await social.analyze(token)
+                        if social_result.get("warnings"):
+                            broker.log(
+                                f"SOCIAL REVIEW {token.get('symbol')}: " +
+                                "; ".join(social_result["warnings"]), "INFO"
+                            )
+
+                        opened = broker.open_position(token, score["score"])
+                        if opened:
+                            last_aggressive_entry = now
+                            print(
+                                f"Paper entry: {token.get('symbol')} "
+                                f"score={score['score']} aggressive_paper=true"
+                            )
+                            break
 
                 summary = broker.summary(prices)
                 print(
