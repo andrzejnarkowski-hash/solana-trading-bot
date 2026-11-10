@@ -8,6 +8,17 @@ import aiohttp
 RPC_URL = "https://api.mainnet-beta.solana.com"
 
 
+def concentration_from_amounts(amounts, total_supply):
+    total = int(total_supply or 0)
+    if total <= 0:
+        return None
+    values = [int(value or 0) for value in amounts]
+    return {
+        "top10_token_account_share_pct": round(sum(values[:10]) / total * 100, 2),
+        "top20_token_account_share_pct": round(sum(values[:20]) / total * 100, 2),
+    }
+
+
 class HolderConcentration:
     async def _rpc(self, session, method, params):
         payload = {"jsonrpc": "2.0", "id": 1, "method": method, "params": params}
@@ -32,13 +43,11 @@ class HolderConcentration:
             if total <= 0:
                 return {"status": "UNKNOWN", "reason": "Token supply unavailable"}
             amounts = [int(item.get("amount") or 0) for item in accounts]
-            top10 = sum(amounts[:10])
-            top20 = sum(amounts[:20])
+            shares = concentration_from_amounts(amounts, total)
             return {
                 "status": "PARTIAL",
                 "accounts_returned": len(amounts),
-                "top10_token_account_share_pct": round(top10 / total * 100, 2),
-                "top20_token_account_share_pct": round(top20 / total * 100, 2),
+                **shares,
                 "warning": "Largest token accounts are not necessarily individual holders; LP and exchange vaults may distort concentration.",
                 "limitations": ["Only the largest 20 token accounts are returned",
                                 "No owner-wallet aggregation or LP-vault classification",
