@@ -39,7 +39,7 @@ cd solana-bot
 streamlit run dashboard/app.py --server.address 0.0.0.0
 ```
 
-Codespaces should forward port 8501. If the bot is running, it records snapshots and paper trades in `solana-bot/data/bot.sqlite3`. The database is local and ignored by Git.
+Codespaces should forward port 8501. After startup, send `/run` in Telegram to enable new paper entries. It records snapshots and paper trades in `solana-bot/data/bot.sqlite3`. The database is local and ignored by Git. In Codespaces it is not an always-on deployment.
 
 ## Always-on Telegram operation (Railway)
 
