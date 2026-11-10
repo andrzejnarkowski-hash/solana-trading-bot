@@ -2,13 +2,22 @@ import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import streamlit as st
+import os
+from dotenv import load_dotenv
+load_dotenv()
 import pandas as pd
 from trading.paper import PaperBroker
 
 st.set_page_config(page_title="Solana Paper Trader", page_icon="📈", layout="wide")
 st.title("Solana Meme Scanner — Paper Trading")
 st.caption("Simulation only. No wallet connection and no real trades.")
-broker = PaperBroker()
+broker = PaperBroker(
+    starting_balance=float(os.getenv("PAPER_START_BALANCE_USD", "1000")),
+    trade_size=float(os.getenv("PAPER_TRADE_SIZE_USD", "25")),
+    max_positions=int(os.getenv("PAPER_MAX_OPEN_POSITIONS", "5")),
+    stop_loss_pct=float(os.getenv("PAPER_STOP_LOSS_PCT", "20")),
+    take_profit_pct=float(os.getenv("PAPER_TAKE_PROFIT_PCT", "40")),
+)
 summary = broker.summary()
 c1,c2,c3,c4 = st.columns(4)
 c1.metric("Paper equity", f"${summary['equity']:,.2f}")
