@@ -42,7 +42,9 @@ class PaperBroker:
             db.executescript("""
             CREATE TABLE IF NOT EXISTS account (
                 id INTEGER PRIMARY KEY CHECK(id=1),
-                starting_balance REAL NOT NULL
+                starting_balance REAL NOT NULL,
+                trade_size REAL NOT NULL DEFAULT 25,
+                entries_enabled INTEGER NOT NULL DEFAULT 0
             );
             CREATE TABLE IF NOT EXISTS trades (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -80,8 +82,37 @@ class PaperBroker:
             for name, declaration in migrations.items():
                 if name not in columns:
                     db.execute(f"ALTER TABLE trades ADD COLUMN {name} {declaration}")
-            db.execute("INSERT OR IGNORE INTO account(id, starting_balance) VALUES(1, ?)",
-                       (self.starting_balance,))
+            account_columns = {row["name"] for row in db.execute("PRAGMA table_info(account)")}
+            if "trade_size" not in account_columns:
+                db.execute("ALTER TABLE account ADD COLUMN trade_size REAL NOT NULL DEFAULT 25")
+            if "entries_enabled" not in account_columns:
+                db.execute("ALTER TABLE account ADD COLUMN entries_enabled INTEGER NOT NULL DEFAULT 0")
+            db.execute(
+                "INSERT OR IGNORE INTO account(id, starting_balance, trade_size, entries_enabled) VALUES(1, ?, ?, 0)",
+                (self.starting_balance, self.trade_size),
+            )
+            saved = db.execute("SELECT trade_size FROM account WHERE id=1").fetchone()
+            self.trade_size = float(saved["trade_size"])
+
+    def set_trade_size(self, amount):
+        """Persist the target notional for each new paper entry."""
+        amount = float(amount)
+        if not 1 <= amount <= 1000 or amount != amount or amount == float("inf"):
+            raise ValueError("Trade size must be between $1 and $1,000.")
+        with self._connect() as db:
+            db.execute("UPDATE account SET trade_size=? WHERE id=1", (amount,))
+        self.trade_size = amount
+        self.log(f"Trade size changed to ${amount:.2f} per new paper entry.")
+
+    def set_entries_enabled(self, enabled):
+        with self._connect() as db:
+            db.execute("UPDATE account SET entries_enabled=? WHERE id=1", (1 if enabled else 0,))
+        self.log("New paper entries enabled." if enabled else "New paper entries paused.")
+
+    def entries_enabled(self):
+        with self._connect() as db:
+            row = db.execute("SELECT entries_enabled FROM account WHERE id=1").fetchone()
+            return bool(row["entries_enabled"]) if row else False
 
     def log(self, message, level="INFO"):
         with self._connect() as db:
