@@ -18,7 +18,7 @@ class TelegramControl:
         self.trading_enabled = trading_enabled
         self.application = None
         self.menu = ReplyKeyboardMarkup(
-            [["▶️ Resume entries", "⏸ Pause entries"],
+            [["▶️ RUN / Start buying", "⏹ STOP buying"],
              ["📊 Status", "🔎 Top signals"],
              ["💼 Positions", "📈 Performance"],
              ["🧾 Trades", "🛡 Risk settings"],
@@ -40,6 +40,8 @@ class TelegramControl:
         self.application = Application.builder().token(self.token).build()
         handlers = {
             "start": self.start_command, "help": self.help_command,
+            "run": self.resume_command, "stop": self.pause_command,
+            "setsize": self.setsize_command, "size": self.setsize_command,
             "status": self.status_command, "positions": self.positions_command,
             "trades": self.trades_command, "events": self.events_command,
             "pause": self.pause_command, "resume": self.resume_command,
@@ -97,8 +99,8 @@ class TelegramControl:
         if not await self._authorized(update):
             return
         actions = {
-            "▶️ Resume entries": self.resume_command,
-            "⏸ Pause entries": self.pause_command,
+            "▶️ RUN / Start buying": self.resume_command,
+            "⏹ STOP buying": self.pause_command,
             "📊 Status": self.status_command,
             "🔎 Top signals": self.top_command,
             "💼 Positions": self.positions_command,
@@ -115,9 +117,10 @@ class TelegramControl:
     async def help_command(self, update, context):
         if await self._authorized(update):
             await update.effective_message.reply_text(
-                "COMMAND CENTER (PAPER MODE)\n"
-                "/resume — allow new simulated entries\n"
-                "/pause — pause new entries; existing positions remain managed\n"
+                "SOLANA PAPER BOT CONTROL\n"
+                "/run — start allowing new paper buys\n"
+                "/stop — stop new buys; open positions are still monitored\n"
+                "/setsize 20 — set each new paper position to $20 (range $1–$1,000)\n"
                 "/status — equity, cash and P&L\n/top — best saved scanner signals\n"
                 "/positions — open positions\n/performance — closed-trade statistics\n"
                 "/trades — recent trades\n/risk — configured limits\n/events — recent logs\n"
@@ -130,9 +133,9 @@ class TelegramControl:
             return
         if self.trading_enabled is not None:
             self.trading_enabled.clear()
-        self.broker.log("Telegram control: paused new paper entries.")
+        self.broker.set_entries_enabled(False)
         await update.effective_message.reply_text(
-            "⏸ NEW PAPER ENTRIES PAUSED\nScanner and management of existing positions continue.",
+            "⏹ STOPPED: no new paper buys. Scanner and open-position monitoring stay ON.",
             reply_markup=self.menu,
         )
 
@@ -141,9 +144,31 @@ class TelegramControl:
             return
         if self.trading_enabled is not None:
             self.trading_enabled.set()
-        self.broker.log("Telegram control: resumed new paper entries.")
+        self.broker.set_entries_enabled(True)
         await update.effective_message.reply_text(
-            "▶️ PAPER ENTRIES RESUMED\nNew simulated entries are allowed under configured risk limits.",
+            "▶️ RUNNING: new paper buys are enabled. The scanner keeps running continuously.",
+            reply_markup=self.menu,
+        )
+
+    async def setsize_command(self, update, context):
+        if not await self._authorized(update):
+            return
+        if len(context.args) != 1:
+            await update.effective_message.reply_text(
+                "Send the amount after the command, e.g. /setsize 20"
+            )
+            return
+        try:
+            amount = float(context.args[0].replace(",", ".").replace("$", ""))
+            self.broker.set_trade_size(amount)
+        except (TypeError, ValueError, OverflowError) as exc:
+            await update.effective_message.reply_text(
+                f"Invalid amount: {exc}\nUse a value from $1 to $1,000."
+            )
+            return
+        await update.effective_message.reply_text(
+            f"✅ New trade size: ${self.broker.trade_size:.2f} per token. "
+            "This applies to future entries only; open positions do not change.",
             reply_markup=self.menu,
         )
 
@@ -151,14 +176,15 @@ class TelegramControl:
         if not await self._authorized(update):
             return
         s, p = self.broker.summary(), self.broker.performance()
-        state = "RUNNING" if self._entries_enabled() else "PAUSED (position management ON)"
+        state = "RUNNING" if self._entries_enabled() else "STOPPED (scanner/position monitoring ON)"
         await update.effective_message.reply_text(
             "📊 SOLANA PAPER BOT\n"
             f"Entry engine: {state}\nEquity: ${s['equity']:.2f} "
             f"(start ${s['starting_balance']:.2f})\nCash: ${s['cash']:.2f}\n"
             f"Realized P&L: ${s['realized_pnl']:.2f}\nUnrealized P&L: ${s['unrealized_pnl']:.2f}\n"
             f"Total P&L: ${s['total_pnl']:.2f}\nOpen positions: {s['open_positions']}\n"
-            f"Closed trades: {p['closed_trades']} | Win rate: {p['win_rate_pct']:.1f}%",
+            f"Closed trades: {p['closed_trades']} | Win rate: {p['win_rate_pct']:.1f}%\n"
+            f"Target per new entry: ${self.broker.trade_size:.2f}",
             reply_markup=self.menu,
         )
 
@@ -233,12 +259,12 @@ class TelegramControl:
         b = self.broker
         await update.effective_message.reply_text(
             "🛡 PAPER RISK SETTINGS (DISPLAY ONLY)\n"
-            f"Trade size: ${b.trade_size:.2f}\nMax positions: {b.max_positions}\n"
+            f"Trade size per new entry: ${b.trade_size:.2f}\nMax positions: {b.max_positions}\n"
             f"Stop loss: {b.stop_loss_pct:.1f}% | Take profit: {b.take_profit_pct:.1f}%\n"
             f"Fee estimate: {b.fee_rate*100:.2f}% each side\n"
             f"Slippage estimate: {b.slippage_rate*100:.2f}% each side\n"
             f"Cooldown: {b.cooldown_seconds//60} min\nDaily loss guard: {b.max_daily_loss_pct:.1f}%\n"
-            "Edit private Codespaces environment settings to change these values.",
+            "Change the entry size anytime with /setsize 20. Existing positions are unchanged.",
             reply_markup=self.menu,
         )
 
