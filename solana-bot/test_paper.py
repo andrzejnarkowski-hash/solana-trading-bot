@@ -45,6 +45,20 @@ class PaperBrokerTests(unittest.TestCase):
         self.broker.update_positions({"mint-1": 12})
         self.assertFalse(self.broker.open_position(self.token, 80))
 
+
+    def test_daily_loss_guard_blocks_new_entries(self):
+        guarded = PaperBroker(
+            db_path=Path(self.tmp.name) / "guarded.sqlite3",
+            starting_balance=1000, trade_size=100, stop_loss_pct=5,
+            take_profit_pct=50, fee_bps=100, slippage_bps=100,
+            max_daily_loss_pct=1,
+        )
+        self.assertTrue(guarded.open_position(self.token, 80))
+        guarded.update_positions({"mint-1": 9})
+        self.assertFalse(guarded.open_position(
+            {"address": "mint-2", "symbol": "NEXT", "price_usd": 1}, 80
+        ))
+
     def test_bad_prices_are_ignored(self):
         self.assertFalse(self.broker.open_position({**self.token, "price_usd": "nan"}, 80))
         self.assertFalse(self.broker.open_position({**self.token, "price_usd": -1}, 80))
