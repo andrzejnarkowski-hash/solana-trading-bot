@@ -55,7 +55,7 @@ class DexScreener:
         base = pair.get("baseToken") or {}
         volume = pair.get("volume") or {}
         txns = pair.get("txns") or {}
-        h1, h24 = txns.get("h1") or {}, txns.get("h24") or {}
+        m5, h1, h24 = txns.get("m5") or {}, txns.get("h1") or {}, txns.get("h24") or {}
         changes = pair.get("priceChange") or {}
         return {
             "name": base.get("name"), "symbol": base.get("symbol"),
@@ -64,7 +64,7 @@ class DexScreener:
             "liquidity_usd": _number((pair.get("liquidity") or {}).get("usd")),
             "volume_5m": _number(volume.get("m5")), "volume_1h": _number(volume.get("h1")),
             "volume_24h": _number(volume.get("h24")),
-            "buys_1h": int(_number(h1.get("buys"))), "sells_1h": int(_number(h1.get("sells"))),
+            "buys_5m": int(_number(m5.get("buys"))), "sells_5m": int(_number(m5.get("sells"))),\n            "buys_1h": int(_number(h1.get("buys"))), "sells_1h": int(_number(h1.get("sells"))),
             "buys_24h": int(_number(h24.get("buys"))), "sells_24h": int(_number(h24.get("sells"))),
             "price_change_5m": _number(changes.get("m5")),
             "price_change_1h": _number(changes.get("h1")),
