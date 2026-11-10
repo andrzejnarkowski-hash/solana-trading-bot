@@ -126,7 +126,8 @@ class PaperBroker:
             (day_start,),
         ).fetchone()
         realized_today = float(row[0] or 0)
-        baseline = max(self.starting_balance, 1.0)
+        persisted_start = db.execute("SELECT starting_balance FROM account WHERE id=1").fetchone()[0]
+        baseline = max(float(persisted_start), 1.0)
         return realized_today <= -(baseline * self.max_daily_loss_pct / 100.0)
 
     def open_position(self, token, score):
