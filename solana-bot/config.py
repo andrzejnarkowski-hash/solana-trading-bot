@@ -42,6 +42,8 @@ class Settings:
     x_bearer_token: str = os.getenv("X_BEARER_TOKEN", "").strip()
     x_search_query: str = os.getenv("X_SEARCH_QUERY", "solana (CA OR contract OR launched OR pump.fun) -is:retweet lang:en").strip()
     x_poll_interval_seconds: int = max(60, _int("X_POLL_INTERVAL_SECONDS", 300, 60))
+    telegram_bot_token: str = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
+    telegram_allowed_user_ids: str = os.getenv("TELEGRAM_ALLOWED_USER_IDS", "").strip()
 
 
 settings = Settings()
