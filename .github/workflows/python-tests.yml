@@ -1,5 +1,6 @@
 name: Python tests
 on:
+  workflow_dispatch:
   push:
     paths:
       - "solana-bot/**"
