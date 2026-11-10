@@ -11,9 +11,9 @@ class ScannerTests(unittest.TestCase):
         self.assertEqual(token["price_usd"], 0)
         self.assertEqual(token["liquidity_usd"], 0)
         self.assertEqual(token["volume_1h"], 0)
-        self.assertEqual(token["buys_1h"], 3)
+        self.assertEqual(token["buys_1h"], 3)\n        self.assertEqual(token["buys_5m"], 0)
 
-    def test_number_of_malformed_inputs_is_safe(self):
+    def test_analyze_pair_extracts_five_minute_metrics(self):\n        pair = {"baseToken": {"address": "mint"}, "volume": {"m5": "900"},\n                "txns": {"m5": {"buys": 12, "sells": 4}}}\n        token = DexScreener().analyze_pair(pair)\n        self.assertEqual(token["volume_5m"], 900)\n        self.assertEqual(token["buys_5m"], 12)\n        self.assertEqual(token["sells_5m"], 4)\n\n    def test_number_of_malformed_inputs_is_safe(self):
         token = DexScreener().analyze_pair({"baseToken": {}, "priceUsd": "inf"})
         self.assertEqual(token["price_usd"], 0)
 
