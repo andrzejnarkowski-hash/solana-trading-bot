@@ -31,7 +31,14 @@ broker = PaperBroker(
     cooldown_minutes=settings.paper_cooldown_minutes,
     max_daily_loss_pct=settings.paper_max_daily_loss_pct,
 )
-summary = broker.summary()
+all_snapshots = broker.recent_snapshots(5000)
+latest_prices = {}
+for snapshot in all_snapshots:
+    address = snapshot.get("address")
+    price = snapshot.get("price_usd")
+    if address and address not in latest_prices and price:
+        latest_prices[address] = price
+summary = broker.summary(latest_prices)
 performance = broker.performance()
 c1, c2, c3, c4 = st.columns(4)
 c1.metric("Paper equity", f"${summary['equity']:,.2f}", f"${summary['total_pnl']:,.2f} total")
@@ -62,7 +69,7 @@ else:
     st.info("No paper trades have been opened yet.")
 
 st.subheader("Market snapshots")
-signals = broker.recent_snapshots(200)
+signals = all_snapshots[:200]
 if signals:
     st.dataframe(pd.DataFrame(signals), use_container_width=True, hide_index=True)
 else:
