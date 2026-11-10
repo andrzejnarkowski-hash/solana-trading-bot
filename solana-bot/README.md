@@ -10,7 +10,7 @@ A token passing these checks is not necessarily safe. Mint authority checks, tok
 
 ## What it currently does
 
-- Discovers recent Solana token profiles through the public DexScreener API and normalizes/deduplicates pairs.
+- Discovers Solana tokens from DexScreener's latest token-profile feed and normalizes/deduplicates pairs. This feed is not a complete new-pair feed, so it can miss brand-new launches.
 - Scores market liquidity, one-hour volume, buy/sell activity and momentum using configurable minimum thresholds.
 - Inspects SPL Token and Token-2022 mint authorities and selected extensions.
 - Estimates concentration in the largest 20 token accounts (not unique holders).
@@ -123,7 +123,7 @@ The backtest is deliberately transparent but limited: it cannot reconstruct miss
 - Holder analysis is a partial top-20 token-account estimate. It does not aggregate owners or classify LP, exchange, vesting, and program vaults.
 - LP lock/burn verification, creator-wallet history, insider-cluster analysis, honeypot transaction simulation, and robust sellability checks are not implemented.
 - Market scoring is heuristic and not a return prediction.
-- Public RPC and DexScreener endpoints may rate-limit, return incomplete data, or be unavailable.
+- The DexScreener latest token-profile feed is not a complete feed of newly created Solana pools. A 10-second poll and a one-minute pair-age filter improve responsiveness for tokens visible in that feed, but do not guarantee discovery of every launch or entry within its first minute. Public RPC and DexScreener endpoints may rate-limit, return incomplete data, or be unavailable.
 - Paper trading is not live trading. Estimated costs and snapshot-based backtesting cannot guarantee realistic execution.
 
 ## Tests
