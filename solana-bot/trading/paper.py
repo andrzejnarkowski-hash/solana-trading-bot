@@ -55,7 +55,8 @@ class PaperBroker:
                 entry_fee_usd REAL NOT NULL DEFAULT 0,
                 exit_fee_usd REAL NOT NULL DEFAULT 0,
                 entry_slippage_bps REAL NOT NULL DEFAULT 0,
-                exit_slippage_bps REAL NOT NULL DEFAULT 0
+                exit_slippage_bps REAL NOT NULL DEFAULT 0,
+                entry_score REAL NOT NULL DEFAULT 0
             );
             CREATE INDEX IF NOT EXISTS idx_trades_status ON trades(status);
             CREATE INDEX IF NOT EXISTS idx_trades_address_time ON trades(address, opened_at);
@@ -78,6 +79,7 @@ class PaperBroker:
                 "exit_fee_usd": "REAL NOT NULL DEFAULT 0",
                 "entry_slippage_bps": "REAL NOT NULL DEFAULT 0",
                 "exit_slippage_bps": "REAL NOT NULL DEFAULT 0",
+                "entry_score": "REAL NOT NULL DEFAULT 0",
             }
             for name, declaration in migrations.items():
                 if name not in columns:
@@ -186,10 +188,10 @@ class PaperBroker:
             entry_fee = size * self.fee_rate
             db.execute("""INSERT INTO trades
                 (address,symbol,entry_price,quantity,invested_usd,status,opened_at,
-                 entry_fee_usd,entry_slippage_bps)
-                VALUES(?,?,?,?,?,'OPEN',?,?,?)""",
+                 entry_fee_usd,entry_slippage_bps,entry_score)
+                VALUES(?,?,?,?,?,'OPEN',?,?,?,?)""",
                 (address, token.get("symbol"), execution_price, quantity, size,
-                 now, entry_fee, self.slippage_rate * 10000))
+                 now, entry_fee, self.slippage_rate * 10000, float(score or 0)))
         self.log(
             f"PAPER BUY {token.get('symbol')} | score {score} | notional ${size:.2f} "
             f"| entry fee ${entry_fee:.2f} | slippage {self.slippage_rate*100:.2f}%",
@@ -282,6 +284,27 @@ class PaperBroker:
                 "best_trade_usd": max((float(r["pnl_usd"] or 0) for r in rows), default=0.0),
                 "worst_trade_usd": min((float(r["pnl_usd"] or 0) for r in rows), default=0.0),
             }
+
+    def learning_report(self):
+        """Describe historical outcomes by entry-score band; never changes the strategy."""
+        bands = [(0, 50), (50, 60), (60, 70), (70, 80), (80, 90), (90, 101)]
+        with self._connect() as db:
+            rows = db.execute(
+                "SELECT entry_score, pnl_usd FROM trades WHERE status='CLOSED' AND pnl_usd IS NOT NULL"
+            ).fetchall()
+        report = []
+        for low, high in bands:
+            sample = [float(row["pnl_usd"]) for row in rows
+                      if low <= float(row["entry_score"] or 0) < high]
+            if sample:
+                wins = sum(1 for value in sample if value > 0)
+                report.append({
+                    "band": f"{low}-{high-1}" if high < 101 else "90+",
+                    "trades": len(sample),
+                    "win_rate_pct": wins / len(sample) * 100,
+                    "average_pnl_usd": sum(sample) / len(sample),
+                })
+        return {"closed_trades": len(rows), "bands": report}
 
     def recent_trades(self, limit=100):
         with self._connect() as db:
