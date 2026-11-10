@@ -1,8 +1,8 @@
-"""Continuous Solana market scanner + PAPER trading loop. Live trading is intentionally absent."""
+"""Continuous Solana scanner + conservative PAPER trading loop. No live execution."""
 import asyncio
-import os
-import signal
-from dotenv import load_dotenv
+import time
+
+from config import settings
 from scanner.dexscreener import DexScreener
 from intelligence.scoring import score_token
 from risk.onchain import OnChainSecurity
@@ -10,34 +10,46 @@ from risk.holders import HolderConcentration
 from intelligence.social import SocialIntelligence
 from trading.paper import PaperBroker
 
-load_dotenv()
-INTERVAL = max(20, int(os.getenv("SCAN_INTERVAL_SECONDS", "60")))
-MIN_AGE = max(1, int(os.getenv("PAPER_MAX_TOKEN_AGE_MINUTES", "1440")))
+INTERVAL = settings.scan_interval_seconds
+MIN_AGE = settings.paper_max_token_age_minutes
 
 
-def eligible_age(token):
+def eligible_age(token, now_ms=None):
     created = token.get("created_at")
-    if not created:
+    try:
+        created = float(created)
+    except (TypeError, ValueError, OverflowError):
         return False
-    import time
-    age_minutes = max(0, (time.time() * 1000 - float(created)) / 60000)
+    if created <= 0:
+        return False
+    now_ms = now_ms if now_ms is not None else time.time() * 1000
+    age_minutes = max(0, (now_ms - created) / 60000)
     return age_minutes <= MIN_AGE
 
 
 async def run():
+    # This build intentionally refuses to start any mode other than paper.
+    if settings.mode != "paper":
+        raise RuntimeError("Only BOT_MODE=paper is supported. Live execution is not implemented.")
     broker = PaperBroker(
-        starting_balance=float(os.getenv("PAPER_START_BALANCE_USD", "1000")),
-        trade_size=float(os.getenv("PAPER_TRADE_SIZE_USD", "25")),
-        max_positions=int(os.getenv("PAPER_MAX_OPEN_POSITIONS", "5")),
-        stop_loss_pct=float(os.getenv("PAPER_STOP_LOSS_PCT", "20")),
-        take_profit_pct=float(os.getenv("PAPER_TAKE_PROFIT_PCT", "40")),
+        starting_balance=settings.paper_start_balance_usd,
+        trade_size=settings.paper_trade_size_usd,
+        max_positions=settings.paper_max_open_positions,
+        stop_loss_pct=settings.paper_stop_loss_pct,
+        take_profit_pct=settings.paper_take_profit_pct,
+        fee_bps=settings.paper_fee_bps,
+        slippage_bps=settings.paper_slippage_bps,
+        cooldown_minutes=settings.paper_cooldown_minutes,
+        max_daily_loss_pct=settings.paper_max_daily_loss_pct,
     )
     scanner = DexScreener()
     security = OnChainSecurity()
     holders = HolderConcentration()
     social = SocialIntelligence()
     await scanner.start()
-    broker.log("Bot started in PAPER mode. No real transactions can be sent.")
+    broker.log(
+        "Bot started in PAPER mode. Estimated fees/slippage are applied; no real transactions can be sent."
+    )
     try:
         while True:
             try:
@@ -45,26 +57,37 @@ async def run():
                 prices = {t["address"]: float(t.get("price_usd") or 0) for t in tokens}
                 open_positions = broker.summary()["positions"]
                 held_addresses = [position["address"] for position in open_positions]
-                held_prices = await scanner.fetch_token_prices(held_addresses)
-                prices.update(held_prices)
-                broker.update_positions(prices)
+                prices.update(await scanner.fetch_token_prices(held_addresses))
+                closed = broker.update_positions(prices)
+                for symbol, pnl, reason in closed:
+                    print(f"Closed {symbol}: {reason}, net P&L ${pnl:.2f}")
+
                 checked = 0
                 for token in tokens:
-                    score = score_token(token)
+                    score = score_token(
+                        token,
+                        min_liquidity=settings.min_liquidity_usd,
+                        min_volume_1h=settings.min_volume_1h_usd,
+                        min_txns_1h=settings.min_txns_1h,
+                    )
                     broker.record_snapshot(token, score["score"], score["decision"])
                     if score["decision"] != "WATCH" or not eligible_age(token):
                         continue
                     checked += 1
-                    # Expensive on-chain checks are reserved for top candidates.
                     if checked > 8:
                         break
+
                     result = await security.check_mint(token["address"])
                     if result.get("status") != "PARSED":
                         broker.log(f"REVIEW {token.get('symbol')}: mint data not parsed", "WARNING")
                         continue
                     if result.get("risks"):
-                        broker.log(f"REJECT {token.get('symbol')}: " + "; ".join(result["risks"]), "WARNING")
+                        broker.log(
+                            f"REJECT {token.get('symbol')}: " + "; ".join(result["risks"]),
+                            "WARNING",
+                        )
                         continue
+
                     holder_result = await holders.analyze(token["address"])
                     if holder_result.get("status") == "PARTIAL":
                         broker.log(
@@ -74,14 +97,27 @@ async def run():
                             "WARNING",
                         )
                     else:
-                        broker.log(f"HOLDER DATA UNKNOWN {token.get('symbol')}: {holder_result.get('reason')}", "WARNING")
+                        broker.log(
+                            f"HOLDER DATA UNKNOWN {token.get('symbol')}: {holder_result.get('reason')}",
+                            "WARNING",
+                        )
+
                     social_result = await social.analyze(token)
                     if social_result.get("warnings"):
-                        broker.log(f"SOCIAL REVIEW {token.get('symbol')}: " + "; ".join(social_result["warnings"]), "INFO")
-                    broker.open_position(token, score["score"])
+                        broker.log(
+                            f"SOCIAL REVIEW {token.get('symbol')}: " +
+                            "; ".join(social_result["warnings"]), "INFO"
+                        )
+                    opened = broker.open_position(token, score["score"])
+                    if opened:
+                        print(f"Paper entry: {token.get('symbol')} score={score['score']}")
+
                 summary = broker.summary(prices)
-                print(f"Scanned {len(tokens)} pairs | paper equity ${summary['equity']:.2f} | "
-                      f"open {summary['open_positions']} | realized P&L ${summary['realized_pnl']:.2f}")
+                print(
+                    f"Scanned {len(tokens)} tokens | paper equity ${summary['equity']:.2f} | "
+                    f"cash ${summary['cash']:.2f} | open {summary['open_positions']} | "
+                    f"realized P&L ${summary['realized_pnl']:.2f}"
+                )
             except Exception as exc:
                 broker.log(f"Scan cycle failed: {type(exc).__name__}: {exc}", "ERROR")
                 print("Scan cycle error:", exc)
