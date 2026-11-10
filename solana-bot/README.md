@@ -17,6 +17,7 @@ A token passing these checks is not necessarily safe. Mint authority checks, tok
 - Collects self-reported social metadata as review context only; links do not establish legitimacy.
 - Simulates entries/exits in SQLite with configurable fee and adverse-slippage assumptions, cooldowns, position limits, stop-loss, take-profit and a realized daily-loss guard.
 - Provides a Streamlit dashboard with paper performance and a snapshot-based backtest.
+- Offers an optional, private-chat Telegram control panel for paper balance, open positions, recent trades, and bot events. Access is restricted to explicitly allowlisted Telegram user IDs.
 
 ## Run in GitHub Codespaces
 
@@ -56,7 +57,19 @@ Run the dashboard in a second terminal with `streamlit run dashboard/app.py`.
 
 ## Configuration
 
-All settings are read from your local `.env` file. Optional X monitoring requires an X API bearer token in `X_BEARER_TOKEN`; leave it blank to keep X monitoring disabled. Never commit the token. Important paper-execution assumptions:
+All settings are read from your local `.env` file. Optional X monitoring requires an X API bearer token in `X_BEARER_TOKEN`; leave it blank to keep X monitoring disabled. Never commit the token.
+
+### Telegram setup
+
+1. Message **@BotFather** in Telegram, run `/newbot`, and follow its prompts.
+2. Copy the bot token into your private local `.env` as `TELEGRAM_BOT_TOKEN=...`. Do not paste it into chat, source code, or a GitHub commit.
+3. Start the application once and open your new bot in Telegram. Send `/start`; it replies with your numeric Telegram user ID.
+4. Stop the application, add that ID to `TELEGRAM_ALLOWED_USER_IDS=123456789` in the private `.env`, then restart.
+5. Use `/help`, `/status`, `/positions`, `/trades`, and `/events` in a private chat.
+
+Telegram commands are read-only in this first version. They cannot buy, sell, or enable live trading. If the token is blank, the scanner continues normally with Telegram disabled.
+
+Important paper-execution assumptions:
 
 | Setting | Default | Meaning |
 |---|---:|---|
