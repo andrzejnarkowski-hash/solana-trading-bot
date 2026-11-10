@@ -25,4 +25,4 @@ jobs:
       - run: python -m pip install --upgrade pip
       - run: pip install -r requirements.txt
       - run: python -m unittest discover -v
-      - run: python -m py_compile config.py bot.py main.py backtesting.py trading/paper.py dashboard/app.py risk/onchain.py risk/holders.py intelligence/scoring.py intelligence/x_monitor.py
+      - run: python -m py_compile config.py bot.py main.py backtesting.py trading/paper.py dashboard/app.py risk/onchain.py risk/holders.py intelligence/scoring.py intelligence/x_monitor.py telegram_control.py
