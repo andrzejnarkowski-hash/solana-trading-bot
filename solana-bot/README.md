@@ -56,7 +56,7 @@ Run the dashboard in a second terminal with `streamlit run dashboard/app.py`.
 
 ## Configuration
 
-All settings are read from your local `.env` file. Important paper-execution assumptions:
+All settings are read from your local `.env` file. Optional X monitoring requires an X API bearer token in `X_BEARER_TOKEN`; leave it blank to keep X monitoring disabled. Never commit the token. Important paper-execution assumptions:
 
 | Setting | Default | Meaning |
 |---|---:|---|
