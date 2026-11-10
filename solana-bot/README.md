@@ -40,7 +40,13 @@ Edit the values in your local `.env`: paper starting balance, simulated order si
 
 ## What the score does / does not mean
 
-The score is a heuristic ranking, not a prediction. Mint/freeze authority checks are only a small part of token risk. This version does not yet verify holder concentration, LP lock/burn, creator wallet history, insider wallets, transfer simulations, X/Twitter account ownership, post engagement, or image/meme narratives. A parsed mint is not a safe token.
+The score is a heuristic ranking, not a prediction. Mint/freeze authority checks are only a small part of token risk. This version includes a partial top-20 token-account concentration estimate, but it does not identify wallet owners or classify LP/exchange vaults. It does not yet verify LP lock/burn, creator wallet history, insider wallets, transfer simulations, X/Twitter account ownership, post engagement, or image/meme narratives. A parsed mint is not a safe token.
+
+## Current analysis limitations
+
+- Holder concentration is only a partial estimate from the largest 20 token accounts; LP and exchange vaults can distort it. It is logged for review and is not treated as a reliable wallet distribution.
+- Social links are metadata only. There is no live X feed, influencer identity verification, engagement analysis, or AI image understanding.
+- The paper strategy is intentionally simple and does not model slippage, MEV, priority fees, or failed transactions. Results are not representative of live execution.
 
 ## Tests
 
