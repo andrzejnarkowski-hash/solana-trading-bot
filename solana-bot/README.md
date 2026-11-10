@@ -41,6 +41,28 @@ streamlit run dashboard/app.py --server.address 0.0.0.0
 
 Codespaces should forward port 8501. If the bot is running, it records snapshots and paper trades in `solana-bot/data/bot.sqlite3`. The database is local and ignored by Git.
 
+## Always-on Telegram operation (Railway)
+
+Codespaces is for development and may stop when you close it. For a bot that stays online, deploy this worker to an always-on host. A Railway service can run the included Dockerfile and restart the process after a crash.
+
+1. Create a Railway project and deploy this GitHub repository.
+2. Set the service **Root Directory** to `/solana-bot` so Railway uses this folder's Dockerfile and `railway.toml`.
+3. Add these service variables in Railway (never commit real secrets):
+   - `BOT_MODE=paper`
+   - `TELEGRAM_BOT_TOKEN` = your rotated BotFather token
+   - `TELEGRAM_ALLOWED_USER_IDS` = your private numeric Telegram user ID
+4. Add a Railway **Volume** mounted at `/app/data`. This is essential: it preserves the SQLite trade history, selected trade size, and run/stop preference across redeploys.
+5. Deploy and wait for the worker logs to show that the scanner and Telegram command center started.
+6. In your private Telegram chat, send `/start`, then `/setsize 20`, then `/run`.
+
+Telegram controls:
+- `/run` or the RUN button enables new paper entries.
+- `/stop` or the STOP button pauses new entries. Scanning and management of existing positions continue.
+- `/setsize 20` sets the target notional to $20 for each future paper entry. It persists across restarts; already-open positions are unchanged.
+- `/learning` reports closed-trade outcomes grouped by the entry score. This is evidence tracking, not automatic strategy mutation.
+
+The worker process itself stays running on Railway. Telegram starts and stops the **entry engine**, not the server process. If the worker is actually offline, it cannot receive Telegram commands; Railway's restart policy is what brings a crashed worker back. The included configuration does not guarantee uptime, and hosting/volume may cost money.
+
 ## Windows local setup
 
 ```powershell
@@ -65,7 +87,7 @@ All settings are read from your local `.env` file. Optional X monitoring require
 2. Copy the bot token into your private local `.env` as `TELEGRAM_BOT_TOKEN=...`. Do not paste it into chat, source code, or a GitHub commit.
 3. Start the application once and open your new bot in Telegram. Send `/start`; it replies with your numeric Telegram user ID.
 4. Stop the application, add that ID to `TELEGRAM_ALLOWED_USER_IDS=123456789` in the private `.env`, then restart.
-5. Use the Telegram menu or `/help`, `/status`, `/pause`, `/resume`, `/top`, `/positions`, `/performance`, `/risk`, `/trades`, and `/events` in a private chat.
+5. Use `/run`, `/stop`, `/setsize 20`, `/learning`, `/status`, `/top`, `/positions`, `/performance`, `/risk`, `/trades`, and `/events` in a private chat.
 
 `/pause` disables new paper entries only; scanning and management of existing positions continue. `/resume` allows new simulated entries under configured risk limits. Telegram cannot enable live trading or send blockchain transactions. Risk settings are display-only.
 
@@ -74,7 +96,7 @@ Important paper-execution assumptions:
 | Setting | Default | Meaning |
 |---|---:|---|
 | `PAPER_START_BALANCE_USD` | 1000 | Starting simulated cash |
-| `PAPER_TRADE_SIZE_USD` | 25 | Maximum notional per simulated entry |
+| `PAPER_TRADE_SIZE_USD` | 25 | Initial target notional per simulated entry (can be changed in Telegram) |
 | `PAPER_MAX_OPEN_POSITIONS` | 5 | Concurrent paper positions |
 | `PAPER_STOP_LOSS_PCT` | 20 | Net loss threshold per position |
 | `PAPER_TAKE_PROFIT_PCT` | 40 | Net profit threshold per position |
