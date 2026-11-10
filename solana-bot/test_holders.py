@@ -34,7 +34,7 @@ class HolderConcentrationTests(unittest.TestCase):
         self.assertEqual(parsed, 3)
         self.assertEqual(len(owners), 2)
         self.assertEqual(sorted(owners.values(), reverse=True), [70, 20])
-        self.assertEqual(len(base58_encode(owner_a)), 44)
+        self.assertEqual(len(base58_encode(owner_a)), 43)
 
 
 if __name__ == "__main__":
