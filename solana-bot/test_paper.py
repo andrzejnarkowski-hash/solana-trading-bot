@@ -59,6 +59,36 @@ class PaperBrokerTests(unittest.TestCase):
             {"address": "mint-2", "symbol": "NEXT", "price_usd": 1}, 80
         ))
 
+    def test_trade_size_persists_across_broker_restart(self):
+        self.broker.set_trade_size(20)
+        restarted = PaperBroker(
+            db_path=self.db, starting_balance=1000, trade_size=99,
+            max_positions=2, stop_loss_pct=5, take_profit_pct=5,
+            fee_bps=100, slippage_bps=100, cooldown_minutes=60,
+            max_daily_loss_pct=0,
+        )
+        self.assertEqual(restarted.trade_size, 20)
+
+    def test_trade_size_is_bounded(self):
+        with self.assertRaises(ValueError):
+            self.broker.set_trade_size(0)
+        with self.assertRaises(ValueError):
+            self.broker.set_trade_size(1001)
+
+    def test_entry_score_is_available_to_learning_report(self):
+        self.assertTrue(self.broker.open_position(self.token, 85))
+        self.broker.update_positions({"mint-1": 12})
+        report = self.broker.learning_report()
+        self.assertEqual(report["closed_trades"], 1)
+        self.assertEqual(report["bands"][0]["band"], "80-89")
+        self.assertEqual(report["bands"][0]["trades"], 1)
+
+    def test_entry_run_state_persists(self):
+        self.assertFalse(self.broker.entries_enabled())
+        self.broker.set_entries_enabled(True)
+        restarted = PaperBroker(db_path=self.db, starting_balance=1000)
+        self.assertTrue(restarted.entries_enabled())
+
     def test_bad_prices_are_ignored(self):
         self.assertFalse(self.broker.open_position({**self.token, "price_usd": "nan"}, 80))
         self.assertFalse(self.broker.open_position({**self.token, "price_usd": -1}, 80))
