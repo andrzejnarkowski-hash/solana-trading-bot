@@ -13,6 +13,7 @@ from intelligence.x_monitor import XMonitor
 from intelligence.ca_detector import extract_addresses
 from intelligence.announcement import analyze_announcement
 from intelligence.influencers import calculate_signal_priority
+from telegram_control import TelegramControl
 
 INTERVAL = settings.scan_interval_seconds
 MIN_AGE = settings.paper_max_token_age_minutes
@@ -56,11 +57,20 @@ async def run():
         poll_interval_seconds=settings.x_poll_interval_seconds,
     )
     x_disabled_logged = False
+    telegram = TelegramControl(
+        token=settings.telegram_bot_token,
+        allowed_user_ids=settings.telegram_allowed_user_ids,
+        broker=broker,
+    )
     await scanner.start()
     broker.log(
         "Bot started in PAPER mode. Estimated fees/slippage are applied; no real transactions can be sent."
     )
     try:
+        try:
+            await telegram.start()
+        except Exception as exc:
+            broker.log(f"Telegram startup failed: {type(exc).__name__}: {exc}", "WARNING")
         while True:
             try:
                 x_result = await x_monitor.poll()
@@ -156,6 +166,10 @@ async def run():
                 print("Scan cycle error:", exc)
             await asyncio.sleep(INTERVAL)
     finally:
+        try:
+            await telegram.stop()
+        except Exception as exc:
+            broker.log(f"Telegram shutdown warning: {type(exc).__name__}: {exc}", "WARNING")
         await scanner.close()
         broker.log("Bot stopped.")
 
