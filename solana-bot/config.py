@@ -39,6 +39,9 @@ class Settings:
     paper_slippage_bps: float = _float("PAPER_SLIPPAGE_BPS", 150, 0)
     paper_cooldown_minutes: int = _int("PAPER_COOLDOWN_MINUTES", 60, 0)
     paper_max_daily_loss_pct: float = _float("PAPER_MAX_DAILY_LOSS_PCT", 10, 0)
+    x_bearer_token: str = os.getenv("X_BEARER_TOKEN", "").strip()
+    x_search_query: str = os.getenv("X_SEARCH_QUERY", "solana (CA OR contract OR launched OR pump.fun) -is:retweet lang:en").strip()
+    x_poll_interval_seconds: int = max(60, _int("X_POLL_INTERVAL_SECONDS", 300, 60))
 
 
 settings = Settings()
