@@ -111,11 +111,13 @@ async def run():
 
                 checked = 0
                 for token in tokens:
+                    is_fresh = eligible_age(token)
                     score = score_token(
                         token,
                         min_liquidity=settings.min_liquidity_usd,
                         min_volume_1h=settings.min_volume_1h_usd,
                         min_txns_1h=settings.min_txns_1h,
+                        fresh=is_fresh,
                     )
                     broker.record_snapshot(token, score["score"], score["decision"])
                     if score["decision"] != "WATCH" or not is_fresh:
