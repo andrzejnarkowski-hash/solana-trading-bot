@@ -1,4 +1,4 @@
-"""Heuristic market score. It ranks candidates; it does not predict returns."""
+"""Conservative heuristic market score; it ranks candidates, not future returns."""
 import math
 
 
@@ -14,7 +14,7 @@ def _finite_number(value, default=0.0):
         return default
 
 
-def score_token(token):
+def score_token(token, min_liquidity=10000, min_volume_1h=5000, min_txns_1h=30):
     liquidity = max(0.0, _finite_number(token.get("liquidity_usd")))
     volume = max(0.0, _finite_number(token.get("volume_1h")))
     buys = max(0, int(_finite_number(token.get("buys_1h"))))
@@ -22,11 +22,11 @@ def score_token(token):
     change = _finite_number(token.get("price_change_1h"))
     transactions = buys + sells
     reasons = []
-    if liquidity < 10000:
+    if liquidity < max(0.0, min_liquidity):
         reasons.append("Insufficient liquidity")
-    if volume < 5000:
+    if volume < max(0.0, min_volume_1h):
         reasons.append("Insufficient volume")
-    if transactions < 30:
+    if transactions < max(0, int(min_txns_1h)):
         reasons.append("Insufficient trading activity")
     if change < -20:
         reasons.append("Strong negative momentum")
