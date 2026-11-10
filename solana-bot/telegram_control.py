@@ -32,13 +32,6 @@ class TelegramControl:
                 "WARNING",
             )
             return False
-        if not self.allowed_user_ids:
-            self.broker.log(
-                "Telegram not started: add your numeric Telegram user ID to "
-                "TELEGRAM_ALLOWED_USER_IDS before enabling remote access.",
-                "WARNING",
-            )
-            return False
         self.application = Application.builder().token(self.token).build()
         self.application.add_handler(CommandHandler("start", self.start_command))
         self.application.add_handler(CommandHandler("help", self.help_command))
@@ -51,7 +44,14 @@ class TelegramControl:
         if self.application.updater is None:
             raise RuntimeError("Telegram polling updater is unavailable")
         await self.application.updater.start_polling(drop_pending_updates=True)
-        self.broker.log("Telegram control panel started (allowlisted users only).")
+        if self.allowed_user_ids:
+            self.broker.log("Telegram control panel started (allowlisted users only).")
+        else:
+            self.broker.log(
+                "Telegram started in onboarding mode: send /start to get your user ID, "
+                "then add it to TELEGRAM_ALLOWED_USER_IDS.",
+                "WARNING",
+            )
         return True
 
     async def stop(self):
