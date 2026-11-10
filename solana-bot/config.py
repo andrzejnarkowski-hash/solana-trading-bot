@@ -25,13 +25,13 @@ def _int(name, default, minimum=0):
 @dataclass(frozen=True)
 class Settings:
     mode: str = os.getenv("BOT_MODE", "paper").strip().lower()
-    scan_interval_seconds: int = max(10, _int("SCAN_INTERVAL_SECONDS", 10, 10))
+    scan_interval_seconds: int = 10  # Fixed for fresh-launch polling; ignores stale .env overrides.
     paper_start_balance_usd: float = _float("PAPER_START_BALANCE_USD", 1000, 1)
     paper_trade_size_usd: float = _float("PAPER_TRADE_SIZE_USD", 25, 1)
     paper_max_open_positions: int = max(1, _int("PAPER_MAX_OPEN_POSITIONS", 5, 1))
     paper_stop_loss_pct: float = _float("PAPER_STOP_LOSS_PCT", 20, 0.1)
     paper_take_profit_pct: float = _float("PAPER_TAKE_PROFIT_PCT", 40, 0.1)
-    paper_max_token_age_minutes: float = max(0.1, _float("PAPER_MAX_TOKEN_AGE_MINUTES", 1, 0.1))
+    paper_max_token_age_minutes: float = 1.0  # Only consider pairs no older than one minute.
     min_liquidity_usd: float = _float("MIN_LIQUIDITY_USD", 5000, 0)
     min_volume_1h_usd: float = _float("MIN_VOLUME_1H_USD", 250, 0)
     min_txns_1h: int = _int("MIN_TXNS_1H", 8, 0)
