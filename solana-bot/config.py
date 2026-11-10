@@ -29,8 +29,8 @@ class Settings:
     paper_start_balance_usd: float = _float("PAPER_START_BALANCE_USD", 1000, 1)
     paper_trade_size_usd: float = _float("PAPER_TRADE_SIZE_USD", 25, 1)
     paper_max_open_positions: int = max(1, _int("PAPER_MAX_OPEN_POSITIONS", 20, 1))
-    paper_stop_loss_pct: float = _float("PAPER_STOP_LOSS_PCT", 20, 0.1)
-    paper_take_profit_pct: float = _float("PAPER_TAKE_PROFIT_PCT", 40, 0.1)
+    paper_stop_loss_pct: float = _float("PAPER_STOP_LOSS_PCT", 60, 0.1)
+    paper_take_profit_pct: float = _float("PAPER_TAKE_PROFIT_PCT", 60, 0.1)
     paper_max_token_age_minutes: float = 5.0  # Only consider pairs up to five minutes old.
     paper_entry_interval_seconds: int = max(60, _int("PAPER_ENTRY_INTERVAL_SECONDS", 90, 60))
     paper_aggressive_mode: bool = os.getenv("PAPER_AGGRESSIVE_MODE", "true").strip().lower() in {"1", "true", "yes", "on"}
