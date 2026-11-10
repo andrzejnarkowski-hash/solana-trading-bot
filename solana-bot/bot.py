@@ -60,8 +60,10 @@ async def run():
     x_disabled_logged = False
     last_aggressive_entry = 0.0
     trading_enabled = asyncio.Event()
-    if broker.entries_enabled():
-        trading_enabled.set()
+    # PAPER mode starts with entries enabled so the bot trades immediately.
+    # Telegram /stop can pause new entries without stopping scanning or exits.
+    broker.set_entries_enabled(True)
+    trading_enabled.set()
     telegram = TelegramControl(
         token=settings.telegram_bot_token,
         allowed_user_ids=settings.telegram_allowed_user_ids,
