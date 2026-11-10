@@ -32,7 +32,6 @@ class PaperBroker:
                 id INTEGER PRIMARY KEY CHECK(id=1),
                 starting_balance REAL NOT NULL
             );
-            INSERT OR IGNORE INTO account(id, starting_balance) VALUES(1, ?);
             CREATE TABLE IF NOT EXISTS trades (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 address TEXT NOT NULL, symbol TEXT, entry_price REAL NOT NULL,
@@ -51,7 +50,9 @@ class PaperBroker:
                 id INTEGER PRIMARY KEY AUTOINCREMENT, level TEXT NOT NULL,
                 message TEXT NOT NULL, created_at INTEGER NOT NULL
             );
-            """, (self.starting_balance,))
+            """)
+            db.execute("INSERT OR IGNORE INTO account(id, starting_balance) VALUES(1, ?)",
+                       (self.starting_balance,))
 
     def log(self, message, level="INFO"):
         with self._connect() as db:
